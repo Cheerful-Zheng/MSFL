@@ -10,6 +10,7 @@ class State:
     __xi = 1/1000
     __l = 1
     __V = 0.5
+    h = 0.01
 
     def __init__(self):
         self.name = None
@@ -25,6 +26,8 @@ class State:
         self.creditScore = 0
         self.group = 0
 
+        self.p = 1
+
     def __init__(self, name, weight, client_state):
         self.name = name
         self.currentWeight = weight
@@ -39,6 +42,8 @@ class State:
         self.creditScore = 0
         self.group = 0
 
+        self.p = 1
+
     # def __init__(self, name, currentWeight: list, error: list, accumulatedFactor, flag: list, continuousFactor, group):
     #     self.name = name
     #     self.currentWeight = currentWeight
@@ -51,6 +56,11 @@ class State:
     #
     #     self.creditScore = self.getCreditScore()
     #     self.group = group
+
+
+
+    def get_h(self):
+        return self.h
 
     def set_client_state(self, client_state):
         self.client_state = client_state
@@ -119,6 +129,17 @@ class State:
         self.flag.append(currentFlag)
         self.setContinuousFactor()
 
+    def set_p(self, sum, ni):
+        self.p = ni * (self.creditScore ** (-1 * self.h)) / sum
+
+    def alter_weights(self, server_weight):
+        for component in range(len(self.currentWeight)):
+            self.currentWeight[component] = self.p * (self.currentWeight[component] - server_weight[component]) + \
+                                            server_weight[component]
+
+        self.client_state.local_weights[0].assign(np.array([self.currentWeight]))
+
+
 
 def getGroupError(groupStates, serverState: State):
     """
@@ -147,7 +168,6 @@ def getGroupError(groupStates, serverState: State):
 def trainOutlierClassifier(weight, serverState: State):
     """
     训练离群值检测器，即Flag求解器
-    :param allGroupStates:所有组的状态
     :param serverState:服务器的状态信息
     :return:离群值检测器
     """
