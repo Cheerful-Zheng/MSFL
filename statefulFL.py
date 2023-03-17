@@ -19,7 +19,7 @@ import calculateFactor as factor
 nest_asyncio.apply()
 
 rho = 1
-h = 0.01
+
 
 
 # data preparation
@@ -398,9 +398,9 @@ def client_update(model, dataset, client_state, server_message, client_optimizer
 
 def build_federated_averaging_process(
         model_fn, client_state_fn,
-        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=1.0),
-        client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1),
-        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1)):
+        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.5),
+        client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.05),
+        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.05)):
     whimsy_model = model_fn()
 
     @tff.tf_computation
@@ -477,7 +477,7 @@ def training_round(client_states, server_state, iterative_process, client_num, b
         server_state, trained_loss, updated_client_states = iterative_process.next(
             server_state, selected_dataset, sampled_client_states
         )
-        # print(f'Round {round_num} training loss: {trained_loss}')
+        print(f'Round {round_num} training loss: {trained_loss}')
         for client_state in updated_client_states:
             client_index = client_state.index
             tf.nest.map_structure(lambda x, y: x.assign(y),
@@ -491,13 +491,26 @@ def credict_score(client_input: calculateFactor.State):
     return score
 
 
-def get_overall_weighted_credict_score(groupedClients):
-    pass
+def get_overall_weighted_credict_score(grouped_clients):
+    """
+    计算DMS中分母的值
+    :param grouped_clients:所有用户
+    :return:DMS中分母的值
+    """
+    sum = 0
+    for group in grouped_clients:
+        for client in group:
+            ni = len(ratings_df[ratings_df.UserID == client.name])
+            single_score = client.get_credict_score()
+            h = calculateFactor.State.h
+            sum = sum + ni * (single_score ** (-1 * h))
+
+    return sum
 
 
 if __name__ == '__main__':
     clientNum = 100
-    roundNum = 100
+    roundNum = 30
     batchSize = 5
     iterativeProcess = build_federated_averaging_process(tff_model, generate_client_state)
     serverState = iterativeProcess.initialize()
@@ -513,7 +526,6 @@ if __name__ == '__main__':
     for train in range(roundNum):
         # 训练模型
         clientStates, serverState = training_round(clientStates, serverState, iterativeProcess, clientNum, batchSize)
-        clientStates.get(0).local_weights[0].numpy = list(range(50))
 
         # 记录当前各个客户的状态
         for i in range(clientNum):
@@ -556,6 +568,13 @@ if __name__ == '__main__':
                 client.addFlag(flag)
                 client.calculateCreditScore()
 
+        # 计算pi
+        weightedCredictScore = get_overall_weighted_credict_score(groupedClients)
+        for client in clients:
+            ni = len(ratings_df[ratings_df.UserID == client.name])
+            client.set_p(weightedCredictScore, ni)
+            # client.alter_weights(serverWeight)
+
         # 用户混淆，并准备进行下一轮训练
         random.shuffle(clients)
         clientStates = {i: clients[i].get_client_state() for i in range(clientNum)}
@@ -563,8 +582,8 @@ if __name__ == '__main__':
         clientsToBeEvaluated = clients.copy()
         clientsToBeEvaluated.sort(key=credict_score)
         print(f'Training {train + 1}')
-        for num in range(clientNum):
-            print(clientsToBeEvaluated[num].name, " score:", clientsToBeEvaluated[num].creditScore, sep='')
+        # for num in range(clientNum):
+        #     print(clientsToBeEvaluated[num].name, " score:", clientsToBeEvaluated[num].creditScore, sep='')
 
         print('\nattacker position:', clientsToBeEvaluated.index(attacker) + 1)
         attackerPos.append(clientsToBeEvaluated.index(attacker) + 1)
@@ -581,3 +600,5 @@ if __name__ == '__main__':
     plt.plot(rounds, attackerPos, marker='o')
     plt.grid()
     plt.show()
+
+    print("")
