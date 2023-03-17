@@ -58,4 +58,13 @@ import pandas as pd
 #
 # print(df)
 
-print(list(range(20)))
+# print(list(range(20)))
+
+import tensorflow as tf
+import numpy as np
+
+# 创建变量w
+w = tf.Variable(np.array([[6.0, 8, 6]]), dtype=tf.float32, name='UserEmbedding/UserEmbeddingKernel')
+w.assign(np.array([[1.0, 1, 1]]))
+# 查看变量的shape,而不是值。
+print(w)

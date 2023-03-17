@@ -1,11 +1,6 @@
 import random
-
 import nest_asyncio
-
 import calculateFactor
-
-nest_asyncio.apply()
-
 import collections
 import functools
 import io
@@ -14,14 +9,17 @@ import requests
 import zipfile
 from typing import List, Optional, Tuple
 import attr
-
 import matplotlib.pyplot as plt
 import pandas as pd
 import tensorflow as tf
 import tensorflow_federated as tff
 import numpy as np
-
 import calculateFactor as factor
+
+nest_asyncio.apply()
+
+rho = 1
+h = 0.01
 
 
 # data preparation
@@ -80,7 +78,7 @@ def load_movielens_data(
 
 ratings_df, movies_df = load_movielens_data()
 
-# TODO 假设0号用户为攻击者
+# 假设0号用户为攻击者
 attackerId = 0
 for row in range(60):
     if ratings_df.loc[row][0] == 0:
@@ -402,7 +400,7 @@ def build_federated_averaging_process(
         model_fn, client_state_fn,
         server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=1.0),
         client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1),
-        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.5)):
+        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1)):
     whimsy_model = model_fn()
 
     @tff.tf_computation
@@ -493,9 +491,13 @@ def credict_score(client_input: calculateFactor.State):
     return score
 
 
+def get_overall_weighted_credict_score(groupedClients):
+    pass
+
+
 if __name__ == '__main__':
     clientNum = 100
-    roundNum = 50
+    roundNum = 100
     batchSize = 5
     iterativeProcess = build_federated_averaging_process(tff_model, generate_client_state)
     serverState = iterativeProcess.initialize()
@@ -511,6 +513,7 @@ if __name__ == '__main__':
     for train in range(roundNum):
         # 训练模型
         clientStates, serverState = training_round(clientStates, serverState, iterativeProcess, clientNum, batchSize)
+        clientStates.get(0).local_weights[0].numpy = list(range(50))
 
         # 记录当前各个客户的状态
         for i in range(clientNum):
@@ -541,7 +544,7 @@ if __name__ == '__main__':
             for group in range(batchSize):
                 groupedClients[group].append(clients[i * batchSize + group])
                 weightsForTraining[group].append(clients[i * batchSize + group].getWeight())
-
+        # 分组计算恶意指数
         for group in range(batchSize):
             singleGroup = groupedClients[group]
             clf = factor.trainOutlierClassifier(weightsForTraining[group], currentServerState)
