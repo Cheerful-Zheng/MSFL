@@ -398,9 +398,9 @@ def client_update(model, dataset, client_state, server_message, client_optimizer
 
 def build_federated_averaging_process(
         model_fn, client_state_fn,
-        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.5),
-        client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.05),
-        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.05)):
+        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=1),
+        client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1),
+        local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1)):
     whimsy_model = model_fn()
 
     @tff.tf_computation
@@ -550,6 +550,9 @@ if __name__ == '__main__':
 
         # 用户分组，计算恶意指数
         groupedClients = []
+        # weightsForTraining = []
+        # for i in range(batchSize):
+        #     weightsForTraining.append([])
         for group in range(batchSize):
             groupedClients.append([])
         for i in range(int(clientNum / batchSize)):
