@@ -78,12 +78,12 @@ def load_movielens_data(
 
 ratings_df, movies_df = load_movielens_data()
 
-# 假设0号用户为攻击者
-attackerId = 0
-for row in range(60):
+# 假设1号用户为攻击者
+attackerId = 1
+for row in range(160):
     if ratings_df.loc[row][0] == 0:
-        ratings_df.loc[row]['Rating'] = 5
-        ratings_df.loc[row]['Timestamp'] = ratings_df.loc[0]['Timestamp']
+        ratings_df.loc[row]['Rating'] = 1
+        ratings_df.loc[row]['Timestamp'] = ratings_df.loc[53]['Timestamp']
 
 
 def create_tf_datasets(ratings_df: pd.DataFrame, batch_size: int = 1, max_examples_per_user: Optional[int] = None,
@@ -396,9 +396,10 @@ def client_update(model, dataset, client_state, server_message, client_optimizer
     )
 
 
+# TODO
 def build_federated_averaging_process(
         model_fn, client_state_fn,
-        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=1),
+        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.7),
         client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1),
         local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.1)):
     whimsy_model = model_fn()
@@ -465,19 +466,18 @@ def generate_client_state():
     return ClientState(index=-1, local_weights=weights)
 
 
-def training_round(client_states, server_state, iterative_process, client_num, batch_size):
+def training_round(client_states, server_state, iterative_process, client_num, batch_size, train_data):
     if client_num % batch_size != 0:
         print("训练客户不能平均分配至每个混淆器")
         return
     round_num = int(client_num / batch_size)
     for round_num in range(round_num):
-        selected_dataset = tf_train_datasets[0 + round_num * 5: 5 + round_num * 5]
-        # selected_dataset = tf_train_datasets[0: 5]
+        selected_dataset = train_data[0 + round_num * 5: 5 + round_num * 5]
         sampled_client_states = [client_states[i] for i in range(0 + round_num * 5, 5 + round_num * 5)]
         server_state, trained_loss, updated_client_states = iterative_process.next(
             server_state, selected_dataset, sampled_client_states
         )
-        print(f'Round {round_num} training loss: {trained_loss}')
+        # print(f'Round {round_num} training loss: {trained_loss}')
         for client_state in updated_client_states:
             client_index = client_state.index
             tf.nest.map_structure(lambda x, y: x.assign(y),
@@ -508,7 +508,7 @@ def get_overall_weighted_credict_score(grouped_clients):
     return sum
 
 
-if __name__ == '__main__':
+def loop(num):
     clientNum = 100
     roundNum = 30
     batchSize = 5
@@ -520,12 +520,14 @@ if __name__ == '__main__':
     attacker = None
     attackerPos = []
     weightsForTraining = []
+    trainData = tf_train_datasets
     for i in range(batchSize):
         weightsForTraining.append([])
     # 进行roundNum轮训练
     for train in range(roundNum):
         # 训练模型
-        clientStates, serverState = training_round(clientStates, serverState, iterativeProcess, clientNum, batchSize)
+        clientStates, serverState = training_round(clientStates, serverState, iterativeProcess, clientNum, batchSize,
+                                                   trainData)
 
         # 记录当前各个客户的状态
         for i in range(clientNum):
@@ -536,8 +538,8 @@ if __name__ == '__main__':
                 flatWeight.extend(value)
 
             if train == 0:
-                clients.append(factor.State(i, flatWeight, currentClientState))
-                if i == 0:
+                clients.append(factor.State(i, flatWeight, currentClientState, tf_train_datasets[i]))
+                if i == attackerId:
                     attacker = clients[i]
             else:
                 clients[i].setWeight(flatWeight)
@@ -546,7 +548,7 @@ if __name__ == '__main__':
         # 记录服务器状态
         serverWeight = serverState.model_weights[0]
         serverWeight = serverWeight.mean(axis=0).tolist()
-        currentServerState = factor.State('server', serverWeight, None)
+        currentServerState = factor.State('server', serverWeight, None, None)
 
         # 用户分组，计算恶意指数
         groupedClients = []
@@ -581,6 +583,7 @@ if __name__ == '__main__':
         # 用户混淆，并准备进行下一轮训练
         random.shuffle(clients)
         clientStates = {i: clients[i].get_client_state() for i in range(clientNum)}
+        trainData = [clients[i].get_data() for i in range(clientNum)]
 
         clientsToBeEvaluated = clients.copy()
         clientsToBeEvaluated.sort(key=credict_score)
@@ -588,7 +591,107 @@ if __name__ == '__main__':
         # for num in range(clientNum):
         #     print(clientsToBeEvaluated[num].name, " score:", clientsToBeEvaluated[num].creditScore, sep='')
 
-        print('\nattacker position:', clientsToBeEvaluated.index(attacker) + 1)
+        print('attacker position:', clientsToBeEvaluated.index(attacker) + 1)
+        attackerPos.append(clientsToBeEvaluated.index(attacker) + 1)
+
+        print('\n', clientsToBeEvaluated[0].name, " score:", clientsToBeEvaluated[0].creditScore, sep='')
+        print(clientsToBeEvaluated[clientsToBeEvaluated.index(attacker)].name, " score:",
+              clientsToBeEvaluated[clientsToBeEvaluated.index(attacker)].creditScore, sep='')
+        print(clientsToBeEvaluated[clientNum - 1].name, " score:", clientsToBeEvaluated[clientNum - 1].creditScore,
+              sep='', end='\n\n')
+
+    print("training finished")
+
+    rounds = list(range(roundNum))
+    plt.plot(rounds, attackerPos, marker='o')
+    plt.grid()
+    plt.savefig("D:\\大学文件\\6.实验室\\复现结果\\DBSCAN-0.7-0.1-0.1-l=1\\Figure_" + str(num + 2) + ".png")
+
+
+if __name__ == '__main__':
+    clientNum = 100
+    roundNum = 30
+    batchSize = 5
+    iterativeProcess = build_federated_averaging_process(tff_model, generate_client_state)
+    serverState = iterativeProcess.initialize()
+    clientStates = {i: ClientState(i, generate_client_state().local_weights) for i in range(clientNum)}
+
+    clients = []
+    attacker = None
+    attackerPos = []
+    weightsForTraining = []
+    trainData = tf_train_datasets
+    for i in range(batchSize):
+        weightsForTraining.append([])
+    # 进行roundNum轮训练
+    for train in range(roundNum):
+        # 训练模型
+        clientStates, serverState = training_round(clientStates, serverState, iterativeProcess, clientNum, batchSize,
+                                                   trainData)
+
+        # 记录当前各个客户的状态
+        for i in range(clientNum):
+            currentClientState = clientStates.get(i)
+            weight = np.array(currentClientState.local_weights[0]).tolist()
+            flatWeight = []
+            for value in weight:
+                flatWeight.extend(value)
+
+            if train == 0:
+                clients.append(factor.State(i, flatWeight, currentClientState, tf_train_datasets[i]))
+                if i == attackerId:
+                    attacker = clients[i]
+            else:
+                clients[i].setWeight(flatWeight)
+                clients[i].set_client_state(currentClientState)
+
+        # 记录服务器状态
+        serverWeight = serverState.model_weights[0]
+        serverWeight = serverWeight.mean(axis=0).tolist()
+        currentServerState = factor.State('server', serverWeight, None, None)
+
+        # 用户分组，计算恶意指数
+        groupedClients = []
+        # weightsForTraining = []
+        # for i in range(batchSize):
+        #     weightsForTraining.append([])
+        for group in range(batchSize):
+            groupedClients.append([])
+        for i in range(int(clientNum / batchSize)):
+            for group in range(batchSize):
+                groupedClients[group].append(clients[i * batchSize + group])
+                weightsForTraining[group].append(clients[i * batchSize + group].getWeight())
+        # 分组计算恶意指数
+        for group in range(batchSize):
+            singleGroup = groupedClients[group]
+            clf = factor.trainOutlierClassifier(weightsForTraining[group], currentServerState)
+
+            err = factor.getGroupError(singleGroup, currentServerState)
+            flag = factor.classifyOutlier(clf, singleGroup)
+            for client in singleGroup:
+                client.addErr(err)
+                client.addFlag(flag)
+                client.calculateCreditScore()
+
+        # 计算pi
+        weightedCredictScore = get_overall_weighted_credict_score(groupedClients)
+        for client in clients:
+            ni = len(ratings_df[ratings_df.UserID == client.name])
+            client.set_p(weightedCredictScore, ni)
+            # client.alter_weights(serverWeight)
+
+        # 用户混淆，并准备进行下一轮训练
+        random.shuffle(clients)
+        clientStates = {i: clients[i].get_client_state() for i in range(clientNum)}
+        trainData = [clients[i].get_data() for i in range(clientNum)]
+
+        clientsToBeEvaluated = clients.copy()
+        clientsToBeEvaluated.sort(key=credict_score)
+        print(f'Training {train + 1}')
+        # for num in range(clientNum):
+        #     print(clientsToBeEvaluated[num].name, " score:", clientsToBeEvaluated[num].creditScore, sep='')
+
+        print('attacker position:', clientsToBeEvaluated.index(attacker) + 1)
         attackerPos.append(clientsToBeEvaluated.index(attacker) + 1)
 
         print('\n', clientsToBeEvaluated[0].name, " score:", clientsToBeEvaluated[0].creditScore, sep='')
