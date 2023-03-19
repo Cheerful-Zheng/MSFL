@@ -1,5 +1,6 @@
 import numpy as np
 from pyod.models.iforest import IForest
+from sklearn.cluster import DBSCAN
 
 
 class State:
@@ -16,6 +17,7 @@ class State:
         self.name = None
         self.currentWeight = []
         self.client_state = None
+        self.data = None
 
         self.error = []
         self.accumulatedFactor = 0
@@ -28,10 +30,11 @@ class State:
 
         self.p = 1
 
-    def __init__(self, name, weight, client_state):
+    def __init__(self, name, weight, client_state, data):
         self.name = name
         self.currentWeight = weight
         self.client_state = client_state
+        self.data = data
 
         self.error = []
         self.accumulatedFactor = 0
@@ -61,6 +64,9 @@ class State:
 
     def get_h(self):
         return self.h
+
+    def get_data(self):
+        return self.data
 
     def set_client_state(self, client_state):
         self.client_state = client_state
@@ -173,8 +179,8 @@ def trainOutlierClassifier(weight, serverState: State):
     """
     weight.append(serverState.getWeight())
 
-    # 训练一个kNN检测器
-    clf = IForest()  # 使用Isolation Forest初始化检测器clf
+    # 训练一个DBSCAN检测器
+    clf = DBSCAN(eps=3.1, min_samples=2)
     clf.fit(weight)  # 使用X_train训练检测器clf
 
     return clf
@@ -191,10 +197,11 @@ def classifyOutlier(clf, groupStates):
     for client in groupStates:
         weight.append(client.getWeight())
 
-    # 用训练好的clf来预测未知数据中的异常值
-    prediction = clf.predict(weight)  # 返回未知数据上的分类标签 (0: 正常值, 1: 异常值)
+    # 用训练好的clf来预测未知数据中的异常值，-1为离群值
+    prediction = clf.fit_predict(weight)
 
-    outlierFlag = 1
+    outlierFlag = -1
+    print(prediction)
     if outlierFlag in prediction:
         return 0
     else:
