@@ -398,7 +398,7 @@ def client_update(model, dataset, client_state, server_message, client_optimizer
 # TODO 学习率
 def build_federated_averaging_process(
         model_fn, client_state_fn,
-        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.6),
+        server_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.7),
         client_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.075),
         local_optimizer_fn=lambda: tf.keras.optimizers.SGD(learning_rate=0.075)):
     whimsy_model = model_fn()
