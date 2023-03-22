@@ -1,6 +1,8 @@
 import numpy as np
 from pyod.models.iforest import IForest
+from pyod.models.knn import KNN
 from sklearn.cluster import DBSCAN
+from sklearn.neighbors import KNeighborsClassifier
 
 
 class State:
@@ -8,7 +10,7 @@ class State:
     用于存储每个客户状态，包括训练权重、恶意因子与分组
     """
     # TODO 调整参数
-    __xi = 1/1000
+    __xi = 1/150
     __l = 1
     __V = 0.5
     h = 0.01
@@ -59,8 +61,6 @@ class State:
     #
     #     self.creditScore = self.getCreditScore()
     #     self.group = group
-
-
 
     def get_h(self):
         return self.h
@@ -146,7 +146,6 @@ class State:
         self.client_state.local_weights[0].assign(np.array([self.currentWeight]))
 
 
-
 def getGroupError(groupStates, serverState: State):
     """
     计算当前分组用户的累积恶意因子，即该组用户的权重与服务器权重的平方根误差之和
@@ -166,7 +165,7 @@ def getGroupError(groupStates, serverState: State):
         for j in range(len(state.currentWeight)):
             currentErr = currentErr + (state.currentWeight[j] - serverWeight[j]) ** 2
 
-        err = err + (currentErr / len(state.currentWeight)) ** 0.5
+        err = err + currentErr ** 0.5
 
     return err
 
@@ -180,7 +179,7 @@ def trainOutlierClassifier(weight, serverState: State):
     weight.append(serverState.getWeight())
 
     # 训练一个DBSCAN检测器
-    clf = DBSCAN(eps=3.1, min_samples=2)
+    clf = DBSCAN(eps=5, min_samples=2)
     clf.fit(weight)  # 使用X_train训练检测器clf
 
     return clf
@@ -197,7 +196,7 @@ def classifyOutlier(clf, groupStates):
     for client in groupStates:
         weight.append(client.getWeight())
 
-    # 用训练好的clf来预测未知数据中的异常值，-1为离群值
+    # 用训练好的clf来预测未知数据中的异常值，-1为离群值-DBSCAN
     prediction = clf.fit_predict(weight)
 
     outlierFlag = -1
